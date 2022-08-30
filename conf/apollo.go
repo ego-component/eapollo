@@ -4,11 +4,12 @@ import (
 	"context"
 	"net/url"
 
+	"github.com/apolloconfig/agollo/v4"
+	"github.com/apolloconfig/agollo/v4/env/config"
+	"github.com/apolloconfig/agollo/v4/storage"
 	"github.com/gotomicro/ego/core/econf"
 	"github.com/gotomicro/ego/core/econf/manager"
 	"github.com/gotomicro/ego/core/elog"
-	"github.com/philchia/agollo/v4"
-	"go.uber.org/zap"
 )
 
 // dataSource file provider.
@@ -47,44 +48,47 @@ func (fp *dataSource) Parse(path string, watch bool) econf.ConfigType {
 		fp.logger.Panic("configType is empty")
 	}
 
-	apolloConf := agollo.Conf{
-		AppID:              urlInfo.Query().Get("appId"),
-		Cluster:            urlInfo.Query().Get("cluster"),
-		NameSpaceNames:     []string{fp.namespace},
-		MetaAddr:           urlInfo.Host,
-		InsecureSkipVerify: true,
-		AccesskeySecret:    urlInfo.Query().Get("accesskeySecret"),
-		CacheDir:           ".",
+	c := &config.AppConfig{
+		AppID:          urlInfo.Query().Get("appId"),
+		Cluster:        urlInfo.Query().Get("cluster"),
+		IP:             urlInfo.Host,
+		NamespaceName:  fp.namespace,
+		IsBackupConfig: true,
+		Secret:         urlInfo.Query().Get("secret"),
 	}
-
-	fp.apollo = agollo.NewClient(&apolloConf, agollo.WithLogger(&agolloLogger{
-		sugar: fp.logger.ZapSugaredLogger(),
-	}))
-	fp.key = configKey
-	fp.enableWatch = watch
-	err = fp.apollo.Start()
+	agollo.SetLogger(fp.logger.ZapSugaredLogger())
+	client, err := agollo.StartWithConfig(func() (*config.AppConfig, error) {
+		return c, nil
+	})
 	if err != nil {
 		fp.logger.Panic("agollo start fail", elog.FieldErr(err))
 	}
+	fp.apollo = client
+	fp.key = configKey
+	fp.enableWatch = watch
+
 	if watch {
 		fp.changed = make(chan struct{}, 1)
-		fp.apollo.OnUpdate(func(event *agollo.ChangeEvent) {
-			fp.changed <- struct{}{}
-		})
+		//fp.apollo.OnUpdate(func(event *agollo.ChangeEvent) {
+		//	fp.changed <- struct{}{}
+		//})
+		fp.apollo.AddChangeListener(fp)
 	}
 	return econf.ConfigType(configType)
 }
 
 // ReadConfig ...
 func (fp *dataSource) ReadConfig() (content []byte, err error) {
-	value := fp.apollo.GetString(fp.key, agollo.WithNamespace(fp.namespace))
+	//value := fp.apollo.GetString(fp.key, agollo.WithNamespace(fp.namespace))
+	value := fp.apollo.GetConfig(fp.namespace).GetValue(fp.key)
 	return []byte(value), nil
 }
 
 // Close ...
 func (fp *dataSource) Close() error {
 	close(fp.changed)
-	return fp.apollo.Stop()
+	//return fp.apollo.Close()
+	return nil
 }
 
 // IsConfigChanged ...
@@ -92,16 +96,12 @@ func (fp *dataSource) IsConfigChanged() <-chan struct{} {
 	return fp.changed
 }
 
-type agolloLogger struct {
-	sugar *zap.SugaredLogger
+//OnChange 增加变更监控
+func (fp *dataSource) OnChange(event *storage.ChangeEvent) {
+	fp.changed <- struct{}{}
 }
 
-// Infof ...
-func (l *agolloLogger) Infof(format string, args ...interface{}) {
-	l.sugar.Infof(format, args...)
-}
+//OnNewestChange 监控最新变更
+func (fp *dataSource) OnNewestChange(event *storage.FullChangeEvent) {
 
-// Errorf ...
-func (l *agolloLogger) Errorf(format string, args ...interface{}) {
-	l.sugar.Errorf(format, args...)
 }

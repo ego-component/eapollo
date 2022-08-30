@@ -9,5 +9,5 @@ import (
 )
 
 在启动的时候调用    
-go run main.gon --config=apollo://ip:port?appId=XXX&cluster=XXX&namespaceName=XXX&configKey=XXX&configType=toml&accesskeySecret=XXX&insecureSkipVerify=XXX&cacheDir=XXX
+go run main.gon --config=apollo://ip:port?appId=XXX&cluster=XXX&namespaceName=XXX&configKey=XXX&configType=toml&secret=XXX
 ```
